@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Face + Hand Detector</title>
+  <style>
+    body {
+      background: #111;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      color: white;
+      font-family: sans-serif;
+    }
+    video, canvas {
+      border: 4px solid #333;
+      border-radius: 1rem;
+      max-width: 90vw;
+    }
+    canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      pointer-events: none;
+    }
+    .container {
+      position: relative;
+    }
+  </style>
+
+  <!-- Scripts -->
+  <script defer src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/hands.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1627447220/camera_utils.js"></script>
+</head>
+<body>
+  <h2>Face + Hand Detection</h2>
+  <div class="container">
+    <video id="video" autoplay muted playsinline></video>
+    <canvas id="canvas"></canvas>
+  </div>
+
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model';
+
+    let lastHands = null;
+    let W = 640, H = 480;
+
+    const hands = new Hands({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/${file}`
+    });
+    hands.setOptions({
+      maxNumHands: 2,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5
+    });
+    hands.onResults((res) => lastHands = res);
+
+    async function init() {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+      video.srcObject = stream;
+      await video.play();
+
+      W = video.videoWidth;
+      H = video.videoHeight;
+      canvas.width = W;
+      canvas.height = H;
+      video.width = W;
+      video.height = H;
+
+      await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+
+      const cam = new Camera(video, {
+        onFrame: async () => {
+          await hands.send({ image: video });
+        },
+        width: W,
+        height: H
+      });
+      cam.start();
+
+      detectLoop();
+    }
+
+    function drawBox(x, y, w, h, label, color) {
+      // Shadow
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+      ctx.fillRect(x - 2, y - 2, w + 4, h + 4);
+
+      // Border
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 3;
+      ctx.strokeRect(x, y, w, h);
+
+      // Label
+      ctx.fillStyle = color;
+      ctx.font = '18px sans-serif';
+      ctx.shadowColor = 'black';
+      ctx.shadowBlur = 4;
+      ctx.fillText(label, x + 5, y - 10);
+      ctx.shadowBlur = 0;
+    }
+
+    async function detectLoop() {
+      const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 224 });
+      const faces = await faceapi.detectAllFaces(video, options);
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Draw faces
+      faces.forEach((res, index) => {
+        const { x, y, width, height } = res.box;
+        drawBox(x, y, width, height, `Face ${index + 1}`, '#4ade80');
+      });
+
+      // Draw hands
+      if (lastHands && lastHands.multiHandLandmarks) {
+        lastHands.multiHandLandmarks.forEach((lm, i) => {
+          const xs = lm.map(p => p.x * W);
+          const ys = lm.map(p => p.y * H);
+          const minX = Math.min(...xs);
+          const minY = Math.min(...ys);
+          const maxX = Math.max(...xs);
+          const maxY = Math.max(...ys);
+          drawBox(minX, minY, maxX - minX, maxY - minY, `Palm ${i + 1}`, '#facc15');
+        });
+      }
+
+      requestAnimationFrame(detectLoop);
+    }
+
+    window.addEventListener('DOMContentLoaded', init);
+  </script>
+</body>
+</html>
