@@ -1,0 +1,77 @@
+<!--
+  Face Landmark Detector (Only Face)
+  ---------------------------------
+  ✅ Green box + 68-point face landmarks
+  ✅ No hand detection
+  ✅ Clean, fast, no controls
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Face Landmark Only</title>
+  <style>
+    body{background:#111;margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;color:#fff;font-family:sans-serif}
+    video,canvas{border:4px solid #333;border-radius:1rem;max-width:90vw}
+    canvas{position:absolute;top:0;left:0;pointer-events:none}
+    .wrap{position:relative}
+  </style>
+  <!-- Face API -->
+  <script defer src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.min.js" crossorigin="anonymous"></script>
+</head>
+<body>
+  <h2>Face Landmarks</h2>
+  <div class="wrap">
+    <video id="video" autoplay muted playsinline></video>
+    <canvas id="overlay"></canvas>
+  </div>
+
+  <script>
+    const video  = document.getElementById('video');
+    const canvas = document.getElementById('overlay');
+    const ctx    = canvas.getContext('2d');
+    const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model';
+    let W=640, H=480;
+
+    function drawCircle(x,y,r,color){
+      ctx.beginPath();
+      ctx.arc(x,y,r,0,Math.PI*2);
+      ctx.fillStyle=color;
+      ctx.fill();
+    }
+
+    async function init(){
+      const stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'user' } });
+      video.srcObject = stream;
+      await video.play();
+      W = video.videoWidth; H = video.videoHeight;
+      [video,canvas].forEach(el=>{ el.width=W; el.height=H; el.style.width=W+'px'; el.style.height=H+'px'; });
+
+      await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+      await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+
+      requestAnimationFrame(loop);
+    }
+
+    function drawFace(res, idx){
+      const { x, y, width, height } = res.detection.box;
+      ctx.strokeStyle='#4ade80'; ctx.lineWidth=2; ctx.strokeRect(x,y,width,height);
+      ctx.font='16px sans-serif'; ctx.fillStyle='#4ade80'; ctx.fillText(`Face ${idx}`, x+4, y-10);
+      res.landmarks.positions.forEach(pt=> drawCircle(pt.x, pt.y, 2, '#4ade80'));
+    }
+
+    async function loop(){
+      if(video.readyState===video.HAVE_ENOUGH_DATA){
+        const opts = new faceapi.TinyFaceDetectorOptions({ inputSize:512, scoreThreshold:0.25 });
+        const faces = await faceapi.detectAllFaces(video, opts).withFaceLandmarks();
+        ctx.clearRect(0,0,W,H);
+        faces.forEach((f,i)=> drawFace(f,i+1));
+      }
+      requestAnimationFrame(loop);
+    }
+
+    window.addEventListener('DOMContentLoaded', init);
+  </script>
+</body>
+</html>
